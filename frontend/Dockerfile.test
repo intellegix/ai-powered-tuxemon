@@ -1,0 +1,35 @@
+# Test Dockerfile for AI-Powered Tuxemon Frontend
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install dependencies for better caching
+COPY package*.json ./
+RUN npm ci
+
+# Install testing and development dependencies
+RUN npm install --save-dev \
+    @testing-library/react \
+    @testing-library/jest-dom \
+    @testing-library/user-event \
+    @vitest/coverage-v8 \
+    jsdom \
+    msw \
+    happy-dom
+
+# Copy source code
+COPY . .
+
+# Create test results directory
+RUN mkdir -p test_results
+
+# Expose development server port
+EXPOSE 5173
+
+# Health check for development server
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:5173 || exit 1
+
+# Default command
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

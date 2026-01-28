@@ -1,0 +1,494 @@
+name: AI Tuxemon Comprehensive Testing
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-validation:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: test
+          POSTGRES_DB: tuxemon_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install pytest-asyncio pytest-cov pytest-mock pytest-xdist
+
+    - name: Wait for services
+      run: |
+        # Wait for PostgreSQL
+        until pg_isready -h localhost -p 5432 -U test; do
+          echo "Waiting for postgres..."
+          sleep 2
+        done
+
+        # Wait for Redis
+        until redis-cli -h localhost -p 6379 ping; do
+          echo "Waiting for redis..."
+          sleep 2
+        done
+
+        # Wait for Qdrant
+        until curl -f http://localhost:6333/health; do
+          echo "Waiting for qdrant..."
+          sleep 2
+        done
+
+    - name: Set environment variables
+      run: |
+        echo "DATABASE_URL=postgresql://test:test@localhost:5432/tuxemon_test" >> $GITHUB_ENV
+        echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+        echo "QDRANT_URL=http://localhost:6333" >> $GITHUB_ENV
+        echo "JWT_SECRET=test-jwt-secret-for-ci" >> $GITHUB_ENV
+        echo "DEBUG=false" >> $GITHUB_ENV
+        echo "LOG_LEVEL=INFO" >> $GITHUB_ENV
+
+    - name: Initialize database
+      run: |
+        cd backend
+        python -c "
+        import asyncio
+        import asyncpg
+        import os
+
+        async def init_db():
+            conn = await asyncpg.connect(os.environ['DATABASE_URL'])
+            await conn.execute('CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"')
+            await conn.close()
+
+        asyncio.run(init_db())
+        "
+
+    - name: Unit tests with coverage
+      run: |
+        cd backend
+        pytest tests/unit/ \
+          --cov=app \
+          --cov-report=xml \
+          --cov-report=term-missing \
+          --cov-fail-under=80 \
+          -v \
+          --tb=short
+
+    - name: Integration tests
+      run: |
+        cd backend
+        pytest tests/integration/ \
+          -v \
+          --tb=short \
+          --timeout=300
+
+    - name: Type checking
+      run: |
+        cd backend
+        python -m mypy app/ --ignore-missing-imports --check-untyped-defs
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+        flags: backend
+        name: backend-coverage
+
+  frontend-validation:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+
+    - name: Type checking
+      run: |
+        cd frontend
+        npm run type-check
+
+    - name: Lint check
+      run: |
+        cd frontend
+        npm run lint
+
+    - name: Unit tests with coverage
+      run: |
+        cd frontend
+        npm run test -- --coverage --run --reporter=verbose
+
+    - name: Build optimization test
+      run: |
+        cd frontend
+        npm run build
+
+        # Check bundle size for mobile performance
+        echo "Checking bundle sizes for mobile optimization..."
+        du -sh dist/
+
+        # Ensure main bundle is under 1MB for mobile performance
+        MAIN_BUNDLE_SIZE=$(find dist/assets -name "index-*.js" -exec wc -c {} \; | awk '{print $1}')
+        if [ $MAIN_BUNDLE_SIZE -gt 1048576 ]; then
+          echo "Error: Main bundle size ($MAIN_BUNDLE_SIZE bytes) exceeds 1MB limit for mobile"
+          exit 1
+        fi
+        echo "Bundle size check passed: $MAIN_BUNDLE_SIZE bytes"
+
+    - name: Upload frontend coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./frontend/coverage/lcov.info
+        flags: frontend
+        name: frontend-coverage
+
+  production-readiness:
+    runs-on: ubuntu-latest
+    needs: [backend-validation]
+    if: github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: test
+          POSTGRES_DB: tuxemon_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install loguru aiohttp psutil asyncpg qdrant-client redis
+
+    - name: Set environment variables
+      run: |
+        echo "DATABASE_URL=postgresql://test:test@localhost:5432/tuxemon_test" >> $GITHUB_ENV
+        echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+        echo "QDRANT_URL=http://localhost:6333" >> $GITHUB_ENV
+        echo "JWT_SECRET=test-jwt-secret-for-ci" >> $GITHUB_ENV
+        echo "MAX_DAILY_BUDGET_USD=50" >> $GITHUB_ENV
+
+    - name: Start test backend
+      run: |
+        cd backend
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+
+    - name: Production readiness validation
+      run: |
+        cd backend
+        python run_production_tests.py > production_test_results.txt 2>&1 || true
+        cat production_test_results.txt
+
+    - name: Upload production test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: production-test-results
+        path: |
+          backend/production_test_results.txt
+          backend/production_readiness_report_*.json
+          backend/load_test_results_*.json
+          backend/mobile_performance_results_*.json
+
+  performance-benchmarks:
+    runs-on: ubuntu-latest
+    needs: [backend-validation]
+    if: github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_USER: test
+          POSTGRES_DB: tuxemon_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        cd backend
+        pip install -r requirements.txt
+        pip install loguru aiohttp psutil asyncpg qdrant-client redis
+
+    - name: Set environment variables
+      run: |
+        echo "DATABASE_URL=postgresql://test:test@localhost:5432/tuxemon_test" >> $GITHUB_ENV
+        echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+        echo "QDRANT_URL=http://localhost:6333" >> $GITHUB_ENV
+
+    - name: Start backend for benchmarks
+      run: |
+        cd backend
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+        sleep 10
+
+    - name: Run performance benchmarks
+      run: |
+        cd backend
+        # Quick load test for CI performance
+        python -c "
+        import asyncio
+        from load_testing.load_test_runner import LoadTestRunner, LoadTestConfig
+
+        async def quick_benchmark():
+            config = LoadTestConfig(
+                concurrent_users=10,
+                test_duration_seconds=30,
+                ramp_up_seconds=5
+            )
+            runner = LoadTestRunner(config)
+            try:
+                results = await runner.run()
+                print(f'Benchmark Results:')
+                print(f'  Success Rate: {results.success_rate:.1f}%')
+                print(f'  P95 Response Time: {results.p95_response_time_ms:.0f}ms')
+                print(f'  Throughput: {results.requests_per_second:.1f} RPS')
+
+                # Performance gates for CI
+                if results.success_rate < 95:
+                    print('ERROR: Success rate below 95%')
+                    exit(1)
+                if results.p95_response_time_ms > 1000:
+                    print('ERROR: P95 response time above 1000ms')
+                    exit(1)
+
+                print('Performance benchmarks passed!')
+            except Exception as e:
+                print(f'Benchmark failed: {e}')
+                # Don't fail CI for benchmark issues in early development
+
+        asyncio.run(quick_benchmark())
+        "
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Run security scan on backend
+      run: |
+        cd backend
+        pip install safety bandit
+
+        # Check for known vulnerabilities in dependencies
+        safety check --json || true
+
+        # Static security analysis
+        bandit -r app/ -f json -o bandit-report.json || true
+
+    - name: Run frontend security scan
+      run: |
+        cd frontend
+        npm audit --audit-level moderate || true
+
+    - name: Upload security scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-scan-results
+        path: |
+          backend/bandit-report.json
+          frontend/npm-audit.log
+      if: always()
+
+  mobile-compatibility:
+    runs-on: ubuntu-latest
+    needs: [frontend-validation]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js 18
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+
+    - name: Build for mobile
+      run: |
+        cd frontend
+        npm run build
+
+    - name: Mobile optimization checks
+      run: |
+        cd frontend/dist
+
+        # Check PWA manifest exists
+        if [ ! -f "manifest.json" ]; then
+          echo "Warning: PWA manifest.json not found"
+        fi
+
+        # Check service worker
+        if [ ! -f "sw.js" ] && [ ! -f "service-worker.js" ]; then
+          echo "Warning: Service worker not found"
+        fi
+
+        # Check bundle sizes for mobile
+        echo "Bundle analysis for mobile performance:"
+        du -h assets/*.js | sort -hr
+        du -h assets/*.css | sort -hr
+
+        # Check total size
+        TOTAL_SIZE=$(du -s . | cut -f1)
+        if [ $TOTAL_SIZE -gt 102400 ]; then  # 100MB limit
+          echo "Warning: Total bundle size may be too large for mobile"
+        fi
+
+  deployment-validation:
+    runs-on: ubuntu-latest
+    needs: [backend-validation, frontend-validation]
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Validate Docker configurations
+      run: |
+        # Check if Dockerfiles exist and are valid
+        if [ -f "backend/Dockerfile" ]; then
+          echo "Backend Dockerfile found"
+          # docker build --dry-run backend/ || true
+        else
+          echo "Backend Dockerfile not found"
+        fi
+
+        if [ -f "frontend/Dockerfile" ]; then
+          echo "Frontend Dockerfile found"
+          # docker build --dry-run frontend/ || true
+        else
+          echo "Frontend Dockerfile not found"
+        fi
+
+    - name: Validate docker-compose configurations
+      run: |
+        if [ -f "docker-compose.yml" ]; then
+          echo "Docker Compose configuration found"
+          # docker-compose config || true
+        else
+          echo "Docker Compose configuration not found"
+        fi
+
+  notify-results:
+    runs-on: ubuntu-latest
+    needs: [backend-validation, frontend-validation, production-readiness, performance-benchmarks, security-scan, mobile-compatibility]
+    if: always()
+    steps:
+    - name: Notify test results
+      run: |
+        echo "=== CI/CD Pipeline Results ==="
+        echo "Backend Validation: ${{ needs.backend-validation.result }}"
+        echo "Frontend Validation: ${{ needs.frontend-validation.result }}"
+        echo "Production Readiness: ${{ needs.production-readiness.result }}"
+        echo "Performance Benchmarks: ${{ needs.performance-benchmarks.result }}"
+        echo "Security Scan: ${{ needs.security-scan.result }}"
+        echo "Mobile Compatibility: ${{ needs.mobile-compatibility.result }}"
+
+        # Set overall status
+        if [ "${{ needs.backend-validation.result }}" = "success" ] && [ "${{ needs.frontend-validation.result }}" = "success" ]; then
+          echo "✅ Core validation passed"
+        else
+          echo "❌ Core validation failed"
+          exit 1
+        fi

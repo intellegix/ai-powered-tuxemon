@@ -1,0 +1,205 @@
+version: '3.8'
+
+services:
+  # Backend API server for testing
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      - DATABASE_URL=postgresql://postgres:test@postgres-test:5432/tuxemon_test
+      - REDIS_URL=redis://redis-test:6379
+      - QDRANT_URL=http://qdrant-test:6333
+      - JWT_SECRET=test-jwt-secret-please-change-in-production
+      - CLAUDE_API_KEY=${TEST_CLAUDE_API_KEY:-test}
+      - MAX_DAILY_BUDGET_USD=10
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      qdrant-test:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+    command: ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Frontend development server for testing
+  frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+    environment:
+      - VITE_API_BASE_URL=http://backend-test:8000
+      - NODE_ENV=test
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    depends_on:
+      - backend-test
+
+  # PostgreSQL database for testing
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: tuxemon_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./backend/database/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis cache for testing
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_test_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Qdrant vector database for testing
+  qdrant-test:
+    image: qdrant/qdrant:v1.7.0
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_test_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+
+  # Test runner service
+  test-runner:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      - DATABASE_URL=postgresql://postgres:test@postgres-test:5432/tuxemon_test
+      - REDIS_URL=redis://redis-test:6379
+      - QDRANT_URL=http://qdrant-test:6333
+      - JWT_SECRET=test-jwt-secret
+      - CLAUDE_API_KEY=${TEST_CLAUDE_API_KEY:-test}
+      - PYTHONPATH=/app
+    depends_on:
+      backend-test:
+        condition: service_healthy
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - test_results:/app/test_results
+    profiles:
+      - testing
+    command: >
+      sh -c "
+      echo 'Waiting for services to be ready...' &&
+      sleep 10 &&
+      echo 'Running unit tests...' &&
+      pytest tests/unit/ -v --cov=app --cov-report=html:test_results/coverage_html --cov-report=xml:test_results/coverage.xml &&
+      echo 'Running integration tests...' &&
+      pytest tests/integration/ -v &&
+      echo 'Running production readiness tests...' &&
+      python run_production_tests.py > test_results/production_test_output.txt 2>&1 &&
+      echo 'All tests completed!'
+      "
+
+  # Load testing service
+  load-tester:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    environment:
+      - TARGET_URL=http://backend-test:8000
+      - CONCURRENT_USERS=${LOAD_TEST_USERS:-50}
+      - TEST_DURATION=${LOAD_TEST_DURATION:-180}
+    depends_on:
+      backend-test:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - test_results:/app/test_results
+    profiles:
+      - load-testing
+    command: >
+      sh -c "
+      echo 'Starting load testing...' &&
+      sleep 10 &&
+      python -c \"
+      import asyncio
+      import json
+      from datetime import datetime
+      from load_testing.load_test_runner import LoadTestRunner, LoadTestConfig
+
+      async def run_load_test():
+          config = LoadTestConfig(
+              base_url='http://backend-test:8000',
+              concurrent_users=int('${LOAD_TEST_USERS:-25}'),
+              test_duration_seconds=int('${LOAD_TEST_DURATION:-120}'),
+              ramp_up_seconds=int('${LOAD_TEST_DURATION:-120}') // 6
+          )
+          runner = LoadTestRunner(config)
+          results = await runner.run()
+          runner.print_results(results)
+
+          # Save results
+          timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+          with open(f'test_results/load_test_docker_{timestamp}.json', 'w') as f:
+              json.dump({
+                  'config': {
+                      'concurrent_users': config.concurrent_users,
+                      'test_duration_seconds': config.test_duration_seconds
+                  },
+                  'results': {
+                      'success_rate': results.success_rate,
+                      'avg_response_time_ms': results.avg_response_time_ms,
+                      'p95_response_time_ms': results.p95_response_time_ms,
+                      'requests_per_second': results.requests_per_second
+                  }
+              }, f, indent=2)
+
+      asyncio.run(run_load_test())
+      \"
+      "
+
+volumes:
+  postgres_test_data:
+    driver: local
+  redis_test_data:
+    driver: local
+  qdrant_test_data:
+    driver: local
+  test_results:
+    driver: local
+
+networks:
+  default:
+    driver: bridge

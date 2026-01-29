@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offline - AI Tuxemon</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .offline-container {
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+
+        .offline-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.7;
+        }
+
+        .offline-title {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: #4299e1;
+        }
+
+        .offline-message {
+            font-size: 1rem;
+            margin-bottom: 2rem;
+            opacity: 0.8;
+            line-height: 1.5;
+        }
+
+        .offline-features {
+            background: rgba(66, 153, 225, 0.1);
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            text-align: left;
+        }
+
+        .offline-features h3 {
+            color: #4299e1;
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .offline-features ul {
+            list-style: none;
+        }
+
+        .offline-features li {
+            margin-bottom: 0.5rem;
+            padding-left: 1.5rem;
+            position: relative;
+            font-size: 0.9rem;
+        }
+
+        .offline-features li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #48bb78;
+            font-weight: bold;
+        }
+
+        .retry-button {
+            background: linear-gradient(135deg, #4299e1, #3182ce);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 120px;
+        }
+
+        .retry-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
+        }
+
+        .retry-button:active {
+            transform: translateY(0);
+        }
+
+        .connection-status {
+            margin-top: 1rem;
+            font-size: 0.8rem;
+            opacity: 0.6;
+        }
+
+        .online {
+            color: #48bb78;
+        }
+
+        .offline {
+            color: #f56565;
+        }
+
+        @media (max-width: 480px) {
+            .offline-icon {
+                font-size: 3rem;
+            }
+
+            .offline-title {
+                font-size: 1.3rem;
+            }
+
+            .offline-features {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="offline-container">
+        <div class="offline-icon">🎮</div>
+        <h1 class="offline-title">You're Offline</h1>
+        <p class="offline-message">
+            Don't worry! You can still enjoy AI Tuxemon even without an internet connection.
+        </p>
+
+        <div class="offline-features">
+            <h3>Available Offline:</h3>
+            <ul>
+                <li>View your monster collection</li>
+                <li>Access your inventory</li>
+                <li>Practice battle moves</li>
+                <li>Review cached conversations</li>
+                <li>Explore visited areas</li>
+            </ul>
+        </div>
+
+        <button class="retry-button" onclick="retryConnection()">
+            Try Again
+        </button>
+
+        <div class="connection-status">
+            Status: <span id="status" class="offline">Offline</span>
+        </div>
+    </div>
+
+    <script>
+        // Check connection status and update UI
+        function updateConnectionStatus() {
+            const statusElement = document.getElementById('status');
+
+            if (navigator.onLine) {
+                statusElement.textContent = 'Online';
+                statusElement.className = 'online';
+            } else {
+                statusElement.textContent = 'Offline';
+                statusElement.className = 'offline';
+            }
+        }
+
+        // Retry connection by attempting to reload
+        function retryConnection() {
+            const button = document.querySelector('.retry-button');
+            button.textContent = 'Checking...';
+            button.disabled = true;
+
+            // Try to fetch a small resource to test connectivity
+            fetch('/health', {
+                method: 'HEAD',
+                cache: 'no-cache'
+            })
+            .then(() => {
+                // Connection restored, reload the app
+                window.location.href = '/';
+            })
+            .catch(() => {
+                // Still offline
+                button.textContent = 'Try Again';
+                button.disabled = false;
+
+                setTimeout(() => {
+                    updateConnectionStatus();
+                }, 1000);
+            });
+        }
+
+        // Listen for online/offline events
+        window.addEventListener('online', updateConnectionStatus);
+        window.addEventListener('offline', updateConnectionStatus);
+
+        // Auto-retry when browser reports online
+        window.addEventListener('online', () => {
+            setTimeout(() => {
+                retryConnection();
+            }, 1000);
+        });
+
+        // Initial status check
+        updateConnectionStatus();
+
+        // Periodic connection check every 30 seconds
+        setInterval(() => {
+            if (navigator.onLine) {
+                fetch('/health', {
+                    method: 'HEAD',
+                    cache: 'no-cache',
+                    timeout: 5000
+                })
+                .then(() => {
+                    // If health check succeeds, we're truly online
+                    if (!document.querySelector('.retry-button').disabled) {
+                        retryConnection();
+                    }
+                })
+                .catch(() => {
+                    // Health check failed, still offline
+                    updateConnectionStatus();
+                });
+            }
+        }, 30000);
+    </script>
+</body>
+</html>

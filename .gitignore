@@ -1,0 +1,73 @@
+# Problematic files
+nul
+
+# Database files
+*.db
+*.db-*
+
+# Environment files with secrets
+backend/.env
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test outputs
+load_test_results_*.json
+mobile_performance_results_*.json
+production_readiness_report_*.json
+
+# Temporary files
+*.tmp
+*.temp
+
+# Original Tuxemon source (large)
+Tuxemon-master.zip
+Tuxemon-master/
+
+# Cache directories
+.cache/
+.pytest_cache/
+.mypy_cache/
+
+# Claude configuration (user-specific)
+.claude/

@@ -1,0 +1,38 @@
+# Hybrid Deployment Configuration for AI-Powered Tuxemon
+# Frontend on Render + Backend Local for Mobile Testing
+# Austin Kidwell | Intellegix
+
+services:
+  # Frontend Static Site (PWA for mobile access)
+  - type: static
+    name: tuxemon-frontend-mobile
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: ./frontend/dist
+    envVars:
+      # Point to local backend IP for hybrid deployment
+      - key: VITE_API_BASE_URL
+        value: http://192.168.7.188:8000
+      - key: VITE_WS_BASE_URL
+        value: ws://192.168.7.188:8000
+      - key: VITE_APP_NAME
+        value: AI-Powered Tuxemon
+      - key: VITE_APP_VERSION
+        value: 1.0.0
+      - key: VITE_ENABLE_PWA
+        value: true
+      - key: VITE_ENABLE_OFFLINE
+        value: true
+      - key: VITE_ENABLE_DEBUG_LOGS
+        value: true
+      - key: VITE_API_TIMEOUT
+        value: 10000
+      - key: VITE_ENABLE_AI_NPCS
+        value: true
+      - key: VITE_ENABLE_REAL_TIME
+        value: true
+      - key: VITE_ENABLE_HAPTIC_FEEDBACK
+        value: true
+      - key: VITE_ENABLE_TOUCH_CONTROLS
+        value: true
+      - key: VITE_MOBILE_OPTIMIZED
+        value: true

@@ -1,0 +1,15 @@
+{
+  "name": "ai-powered-tuxemon",
+  "version": "1.0.0",
+  "description": "Mobile-first Pokemon-style game with AI NPCs",
+  "scripts": {
+    "build": "cd frontend && npm ci && npm run build",
+    "start": "cd frontend && npm start"
+  },
+  "keywords": ["pokemon", "ai", "mobile", "pwa", "react", "fastapi"],
+  "author": "Austin Kidwell <akidwell@asr-inc.us>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

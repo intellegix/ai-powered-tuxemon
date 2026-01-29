@@ -1,0 +1,136 @@
+/* AI-Powered Tuxemon - Global Styles */
+/* Austin Kidwell | Intellegix | Mobile-First Design */
+
+/* CSS Reset and Base Styles */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Mobile-First Responsive Design */
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%; /* Prevent iOS text scaling */
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #1a1a2e;
+  color: #ffffff;
+  overflow-x: hidden;
+
+  /* Mobile optimizations */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -khtml-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
+  width: 100vw;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Mobile Touch Optimizations */
+button,
+input[type="button"],
+input[type="submit"] {
+  -webkit-appearance: none;
+  border-radius: 8px;
+  border: none;
+  padding: 12px 24px;
+  min-height: 44px; /* iOS accessibility requirement */
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+button:active,
+input[type="button"]:active,
+input[type="submit"]:active {
+  transform: scale(0.98);
+}
+
+/* Game-specific styles */
+.game-container {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.game-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  touch-action: manipulation; /* Optimize touch performance */
+}
+
+/* Loading states */
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid #333;
+  border-top: 4px solid #4f46e5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* PWA specific styles */
+@media (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+/* Mobile landscape optimization */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  .game-hud {
+    height: auto;
+    padding: 8px;
+  }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

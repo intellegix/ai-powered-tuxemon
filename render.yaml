@@ -1,82 +1,18 @@
-# Render.com Deployment Configuration for AI-Powered Tuxemon
-# Austin Kidwell | Intellegix | Mobile-First Pokemon-Style Game
-#
-# 🚀 DEPLOYMENT STRATEGY:
-# 1. GitHub Actions runs tests and validation on every push/PR
-# 2. Render automatically deploys main branch when tests pass
-# 3. Production URL: https://tuxemon-frontend.onrender.com
-#
-# 💰 ESTIMATED COSTS:
-# - Backend (Starter): $7/month
-# - Frontend (Static): Free
-# - PostgreSQL (Starter): $12/month
-# - Total: ~$19/month + variable AI costs
+# Fixed Render Configuration for AI-Powered Tuxemon Frontend
+# Austin Kidwell | Intellegix | Hybrid Deployment
 
 services:
-  # Backend API Service
-  - type: web
-    name: tuxemon-backend
-    runtime: python
-    plan: starter  # $7/month
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: tuxemon-postgres
-          property: connectionString
-      - key: REDIS_URL
-        sync: false  # Will set manually from Redis provider
-      - key: QDRANT_URL
-        sync: false  # Will set manually from Qdrant Cloud
-      - key: QDRANT_API_KEY
-        sync: false  # Will set manually from Qdrant Cloud
-      - key: JWT_SECRET_KEY
-        generateValue: true
-      - key: DEBUG
-        value: false
-      - key: LOG_LEVEL
-        value: INFO
-      - key: HOST
-        value: 0.0.0.0
-      - key: PORT
-        value: 8000
-      - key: APP_VERSION
-        value: 1.0.0
-      - key: CLAUDE_API_KEY
-        sync: false  # Optional, set if available
-      - key: MAX_COST_PER_DAY_USD
-        value: 50
-      - key: MAX_CLAUDE_REQUESTS_PER_DAY
-        value: 1000
-      - key: OLLAMA_BASE_URL
-        value: http://localhost:11434  # Local LLM fallback
-      - key: OLLAMA_MODEL
-        value: mistral:7b-instruct
-      - key: DEFAULT_MODEL_PROVIDER
-        value: local
-      - key: ENABLE_AI_FEATURES
-        value: true
-      - key: ENABLE_COST_TRACKING
-        value: true
-
-  # Frontend Static Site
+  # Frontend Static Site (Fixed Configuration)
   - type: static
-    name: tuxemon-frontend
+    name: ai-tuxemon-mobile
     buildCommand: cd frontend && npm ci && npm run build
     staticPublishPath: ./frontend/dist
     envVars:
+      # Local backend connection
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: tuxemon-backend
-          property: host
+        value: http://192.168.7.188:8000
       - key: VITE_WS_BASE_URL
-        fromService:
-          type: web
-          name: tuxemon-backend
-          property: host
+        value: ws://192.168.7.188:8000
       - key: VITE_APP_NAME
         value: AI-Powered Tuxemon
       - key: VITE_APP_VERSION
@@ -85,9 +21,17 @@ services:
         value: true
       - key: VITE_ENABLE_OFFLINE
         value: true
-
-databases:
-  - name: tuxemon-postgres
-    databaseName: tuxemon
-    user: tuxemon_admin
-    plan: starter  # $12/month - 1GB storage, 1M rows
+      - key: VITE_ENABLE_DEBUG_LOGS
+        value: true
+      - key: VITE_API_TIMEOUT
+        value: 10000
+      - key: VITE_ENABLE_AI_NPCS
+        value: true
+      - key: VITE_ENABLE_REAL_TIME
+        value: true
+      - key: VITE_ENABLE_HAPTIC_FEEDBACK
+        value: true
+      - key: VITE_ENABLE_TOUCH_CONTROLS
+        value: true
+      - key: VITE_MOBILE_OPTIMIZED
+        value: true

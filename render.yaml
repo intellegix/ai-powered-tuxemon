@@ -8,11 +8,11 @@ services:
     buildCommand: cd frontend && npm ci && npm run build
     staticPublishPath: ./frontend/dist
     envVars:
-      # Local backend connection
+      # Ngrok tunnel backend connection
       - key: VITE_API_BASE_URL
-        value: http://192.168.7.188:8000
+        value: https://brankier-unprotected-temika.ngrok-free.dev
       - key: VITE_WS_BASE_URL
-        value: ws://192.168.7.188:8000
+        value: wss://brankier-unprotected-temika.ngrok-free.dev
       - key: VITE_APP_NAME
         value: AI-Powered Tuxemon
       - key: VITE_APP_VERSION

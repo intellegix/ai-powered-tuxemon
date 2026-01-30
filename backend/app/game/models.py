@@ -118,6 +118,10 @@ class Monster(SQLModel, table=True):
     last_battle: Optional[datetime] = None
     times_battled: int = 0
 
+    # Relationships
+    player: Optional["Player"] = Relationship(back_populates="monsters")
+    npc: Optional["NPC"] = Relationship(back_populates="monsters")
+
 
 class Player(SQLModel, table=True):
     """Database model for players."""

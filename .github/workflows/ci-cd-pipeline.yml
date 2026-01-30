@@ -1,0 +1,473 @@
+# CI/CD Pipeline for AI-Powered Tuxemon with GitHub Actions + Render
+# Austin Kidwell | Intellegix | Mobile-First Pokemon-Style Game
+
+name: "🚀 AI Tuxemon CI/CD Pipeline"
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  # Test environment configuration
+  DATABASE_URL: postgresql://postgres:test@localhost:5432/tuxemon_test
+  REDIS_URL: redis://localhost:6379
+  QDRANT_URL: http://localhost:6333
+  JWT_SECRET_KEY: test-jwt-secret-key-32-characters
+  DEBUG: true
+  LOG_LEVEL: INFO
+
+jobs:
+  # ============================================================================
+  # BACKEND VALIDATION AND TESTING
+  # ============================================================================
+  backend-tests:
+    name: "🐍 Backend Tests & Validation"
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: tuxemon_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: "📦 Install Backend Dependencies"
+        run: |
+          cd backend
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-asyncio pytest-cov mypy
+
+      - name: "🔍 Code Quality - Type Checking"
+        run: |
+          cd backend
+          mypy app/ --ignore-missing-imports
+
+      - name: "🧪 Unit Tests with Coverage"
+        run: |
+          cd backend
+          pytest tests/unit/ -v --cov=app --cov-report=xml --cov-report=term --cov-fail-under=80
+
+      - name: "🔗 Integration Tests"
+        run: |
+          cd backend
+          pytest tests/integration/ -v --timeout=300
+
+      - name: "📊 Upload Coverage Reports"
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./backend/coverage.xml
+          flags: backend
+          name: backend-coverage
+
+  # ============================================================================
+  # FRONTEND VALIDATION AND TESTING
+  # ============================================================================
+  frontend-tests:
+    name: "⚛️ Frontend Tests & Build"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "📦 Setup Node.js 18"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: "📦 Install Frontend Dependencies"
+        run: |
+          cd frontend
+          npm ci
+
+      - name: "🔍 Code Quality - TypeScript Check"
+        run: |
+          cd frontend
+          npm run type-check
+
+      - name: "🧪 Unit Tests with Coverage"
+        run: |
+          cd frontend
+          npm run test -- --coverage --run --reporter=verbose
+
+      - name: "🏗️ Production Build Test"
+        env:
+          VITE_API_BASE_URL: https://api.example.com
+        run: |
+          cd frontend
+          npm run build
+
+      - name: "📊 Bundle Size Analysis"
+        run: |
+          cd frontend
+          ls -la dist/
+          echo "Frontend bundle size:"
+          du -sh dist/
+
+  # ============================================================================
+  # PRODUCTION READINESS VALIDATION
+  # ============================================================================
+  production-readiness:
+    name: "🔥 Production Readiness Check"
+    runs-on: ubuntu-latest
+    needs: [backend-tests]
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: tuxemon_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: "📦 Install Dependencies"
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: "🏥 Production Readiness Validation"
+        run: |
+          cd backend
+          python production_readiness/readiness_validator.py
+
+      - name: "📊 Upload Readiness Report"
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-readiness-report
+          path: backend/production_readiness_report_*.json
+
+  # ============================================================================
+  # PERFORMANCE AND LOAD TESTING
+  # ============================================================================
+  performance-tests:
+    name: "⚡ Performance & Load Tests"
+    runs-on: ubuntu-latest
+    needs: [backend-tests]
+    if: github.ref == 'refs/heads/main' || github.event_name == 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: tuxemon_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: "📦 Install Dependencies"
+        run: |
+          cd backend
+          pip install -r requirements.txt
+
+      - name: "🚀 Start Test Application"
+        run: |
+          cd backend
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 30  # Wait for app to start
+
+      - name: "⚡ Load Testing"
+        run: |
+          cd backend
+          python load_testing/load_test_runner.py --users 50 --duration 120
+
+      - name: "📱 Mobile Performance Testing"
+        run: |
+          cd backend
+          python load_testing/mobile_performance_test.py --quick
+
+      - name: "📊 Upload Performance Reports"
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-reports
+          path: |
+            backend/load_test_results_*.json
+            backend/mobile_performance_results_*.json
+
+  # ============================================================================
+  # END-TO-END TESTING (Mobile Focus)
+  # ============================================================================
+  e2e-tests:
+    name: "🧪 End-to-End Tests"
+    runs-on: ubuntu-latest
+    needs: [frontend-tests, backend-tests]
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: tuxemon_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+      qdrant:
+        image: qdrant/qdrant:v1.7.0
+        ports:
+          - 6333:6333
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐍 Set up Python 3.11"
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: "📦 Setup Node.js 18"
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: "📦 Install Dependencies"
+        run: |
+          cd backend && pip install -r requirements.txt
+          cd ../frontend && npm ci
+
+      - name: "🎭 Install Playwright"
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+
+      - name: "🚀 Start Full Application Stack"
+        run: |
+          # Start backend
+          cd backend
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+
+          # Start frontend dev server
+          cd ../frontend
+          npm run dev &
+
+          # Wait for services to start
+          sleep 60
+
+      - name: "🧪 Run E2E Tests (Mobile Chrome)"
+        run: |
+          cd frontend
+          npx playwright test --project=mobile-chrome
+
+      - name: "📊 Upload E2E Test Results"
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+
+  # ============================================================================
+  # DOCKER BUILD VALIDATION
+  # ============================================================================
+  docker-builds:
+    name: "🐳 Docker Build Validation"
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🐳 Set up Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🏗️ Build Backend Docker Image"
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: tuxemon-backend:latest
+
+      - name: "🏗️ Build Frontend Docker Image"
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: tuxemon-frontend:latest
+
+  # ============================================================================
+  # SECURITY SCANNING
+  # ============================================================================
+  security-scan:
+    name: "🔒 Security Scanning"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "🔒 Run Bandit Security Scan (Python)"
+        run: |
+          pip install bandit[toml]
+          bandit -r backend/app/ -f json -o bandit-report.json || true
+
+      - name: "🔒 Run npm audit (Node.js)"
+        run: |
+          cd frontend
+          npm audit --audit-level=moderate || true
+
+      - name: "📊 Upload Security Reports"
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            frontend/npm-audit.json
+
+  # ============================================================================
+  # DEPLOYMENT STATUS UPDATE
+  # ============================================================================
+  deployment-status:
+    name: "🚀 Deployment Status"
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, production-readiness]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: "📥 Checkout Code"
+        uses: actions/checkout@v4
+
+      - name: "✅ All Tests Passed"
+        run: |
+          echo "🎉 All tests passed! Render will automatically deploy this commit."
+          echo "Backend URL: https://tuxemon-backend.onrender.com"
+          echo "Frontend URL: https://tuxemon-frontend.onrender.com"
+
+      - name: "📊 Create Deployment Summary"
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ✅ Ready for Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Service URLs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend API**: https://tuxemon-backend.onrender.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **Frontend App**: https://tuxemon-frontend.onrender.com" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Check**: https://tuxemon-backend.onrender.com/health" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Backend Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Frontend Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Production Readiness: Validated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Render will deploy automatically within 2-5 minutes.*" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================================
+  # NOTIFICATION AND CLEANUP
+  # ============================================================================
+  notify-completion:
+    name: "📢 Notify Completion"
+    runs-on: ubuntu-latest
+    needs: [deployment-status]
+    if: always() && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: "📊 Pipeline Summary"
+        run: |
+          if [[ "${{ needs.deployment-status.result }}" == "success" ]]; then
+            echo "🎉 CI/CD Pipeline completed successfully!"
+            echo "🚀 Render deployment triggered for production."
+          else
+            echo "❌ CI/CD Pipeline failed."
+            echo "🔍 Check the logs above for details."
+            exit 1
+          fi

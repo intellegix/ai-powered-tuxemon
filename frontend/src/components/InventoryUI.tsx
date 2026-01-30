@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '../services/api'
+import { apiService as api } from '../services/api'
 import { useGameData } from '../hooks/useGameStore'
 
 interface InventoryItem {

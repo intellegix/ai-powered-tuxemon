@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import AsyncGenerator, Dict, Any, Optional
 from uuid import UUID, uuid4
 from unittest.mock import AsyncMock, MagicMock, patch
+from pydantic import BaseModel
 
 import asyncpg
 from fastapi.testclient import TestClient
@@ -24,14 +25,27 @@ from redis.asyncio import Redis
 
 # Import app components
 from app.main import app
-from app.core.config import settings
-from app.core.database import DatabaseManager
-from app.models.player import Player, PlayerCreate
-from app.models.npc import NPC, NPCCreate
-from app.models.monster import Monster, MonsterCreate
-from app.ai.memory_manager import MemoryManager
-from app.ai.cost_tracker import CostTracker
-from app.ai.personality import PersonalityTraits
+from app.config import get_settings
+from app.database import get_db, AsyncSessionLocal
+from app.game.models import (
+    Player, NPC, Monster, PersonalityTraits,
+    NPCInteractionContext, DialogueResponse, MemoryItem
+)
+from app.api.routes.auth import PlayerRegister
+from app.api.routes.admin import CreateNPCRequest
+
+# Get settings instance
+settings = get_settings()
+
+# Test data models
+class MonsterCreate(BaseModel):
+    """Test model for creating monsters"""
+    species: str
+    name: str
+    level: int
+    experience: int
+    stats: dict
+    moves: list
 
 
 # Test environment configuration
@@ -185,9 +199,9 @@ def mock_sentence_transformer():
 
 # Test Data Fixtures
 @pytest.fixture
-def sample_player_data() -> PlayerCreate:
+def sample_player_data() -> PlayerRegister:
     """Provide sample player data for testing."""
-    return PlayerCreate(
+    return PlayerRegister(
         username=f"test_player_{uuid4().hex[:8]}",
         email=f"test_{uuid4().hex[:8]}@example.com",
         password="test_password_123"
@@ -195,9 +209,9 @@ def sample_player_data() -> PlayerCreate:
 
 
 @pytest.fixture
-def sample_npc_data() -> NPCCreate:
+def sample_npc_data() -> CreateNPCRequest:
     """Provide sample NPC data for testing."""
-    return NPCCreate(
+    return CreateNPCRequest(
         slug=f"test_npc_{uuid4().hex[:8]}",
         name="Test NPC Alice",
         sprite_name="trainer_alice",
@@ -261,7 +275,7 @@ def sample_monster_data() -> MonsterCreate:
 
 
 @pytest_asyncio.fixture
-async def sample_player(db_session: asyncpg.Connection, sample_player_data: PlayerCreate) -> Player:
+async def sample_player(db_session: asyncpg.Connection, sample_player_data: PlayerRegister) -> Player:
     """Create sample player in database."""
     # This would use your actual player creation logic
     player_id = uuid4()
@@ -294,7 +308,7 @@ async def sample_player(db_session: asyncpg.Connection, sample_player_data: Play
 
 
 @pytest_asyncio.fixture
-async def sample_npc(db_session: asyncpg.Connection, sample_npc_data: NPCCreate) -> NPC:
+async def sample_npc(db_session: asyncpg.Connection, sample_npc_data: CreateNPCRequest) -> NPC:
     """Create sample NPC in database."""
     npc_id = uuid4()
     await db_session.execute(
